@@ -1,0 +1,44 @@
+--发送GPS数据块，只保护GPRMC语句
+
+--发送数据中间间隔时间（单位ms）
+local sendDelay = 1000
+
+-- 读取的文件名称，默认路径为LLCOM根目录
+local filename = "1234.log"
+
+sys.taskInit(function ()
+	-- 只读方式打开文件
+	local file = io.open(filename,"r")
+	io.input(file)
+    while true do    
+		for line in io.lines(filename) do
+			-- 获取系统时间
+			local tm = os.time()
+			-- 获取日期，格式为YYmmdd
+			local date = string.sub(os.date("%Y%m%d", tm),3)
+			-- 获取时间，格式为HHMMSS
+			local time = os.date("%H%M%S", tm)
+			-- 匹配$GPRMC语句
+			if string.match(line,"GPRMC") then
+				-- 去除校验码部分
+				line = string.sub(line,1,string.find(line,"*"))
+				-- 替换日期和时间为当前值
+				line = string.gsub(line,"(%d%d%d%d%d%d)",time,1)
+				line = string.gsub(line,"[,](%d%d%d%d%d%d)[,]",","..date..",")
+				-- 重新计算校验码
+				local check = line:byte(2)
+				for i=3,line:len()-1 do -- 忽略最后的*号
+					check = check ~ line:byte(i)
+				end
+				line = line..string.char(check%256):toHex()
+			end
+			local data = line			
+            if data then
+                log.info("send data",apiSendUartData(data),data)
+            end
+            sys.wait(sendDelay)
+		end
+    end    
+    io.close(file)
+end)
+
