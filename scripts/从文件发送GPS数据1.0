@@ -1,0 +1,84 @@
+--发送GPS数据块，只保护GPRMC语句
+
+--发送数据中间间隔时间（单位ms）
+local sendDelay = 1000
+-- 读取的文件名称，默认路径为LLCOM根目录
+local filename = "gps.log"
+-- 处理中文字符编码问题，lua为UTF8编码，系统路径默认编码为gb2312
+filename = apiUtf8ToHex(filename):fromHex()
+
+-- 替换校验码
+local function checkSum(data)	
+	local check = data:byte(2)
+	for i=3,data:len()-4 do -- 忽略最后的*号
+		check = check ~ data:byte(i)
+	end
+	return string.sub(data,1,-4).."*"..string.char(check%256):toHex()
+end
+
+sys.taskInit(function ()
+	-- 只读方式打开文件
+	local file = io.open(filename,"r")
+	io.input(file)
+    while true do    
+		for line in io.lines(filename) do
+			if string.match(line,"GPRMC") then				
+            	sys.wait(sendDelay)
+			end
+			-- 获取系统时间
+			local tm = os.time(os.date("!*t")) --格林威治时间
+			-- 获取日期，格式为YYmmdd
+			local date = os.date("%d%m%y", tm)
+			-- 获取时间，格式为HHMMSS
+			local time = os.date("%H%M%S", tm)
+			-- 匹配$GPRMC语句
+			if string.match(line,"GPRMC") then
+				-- 替换日期和时间为当前值
+				line = string.gsub(line,"(%d%d%d%d%d%d)",time,1)
+				line = string.gsub(line,"[,](%d%d%d%d%d%d)[,]",","..date..",")
+				-- 重新计算校验码
+				line = checkSum(line)
+			end
+			if string.match(line,"GPGLL") or string.match(line,"GPGGA") then
+				-- 替换时间为当前值
+				line = string.gsub(line,"(%d%d%d%d%d%d)",time)
+				-- 重新计算校验码
+				line = checkSum(line)				
+			end			
+			local data = line			
+            if data then
+                log.info("send data",apiSendUartData(data),data)
+            end
+		end
+    end    
+    io.close(file)
+end)
+
+--[[
+--将以下内容保存到llcom根目录，命名为gps.lua用于测试
+$GPRMC,013635.00,A,2233.62330,N,11405.54845,E,0.088,,250811,,,D*75
+$GPVTG,,T,,M,0.088,N,0.163,K,D*22
+$GPGGA,013635.00,2233.62330,N,11405.54845,E,2,07,2.71,105.6,M,-2.2,M,,0000*4C
+$GPGSA,A,3,31,06,50,03,42,23,32,,,,,,11.21,2.71,10.87*0F
+$GPGSV,3,1,09,03,42,186,34,06,53,163,22,13,01,322,,23,24,321,33*7C
+$GPGSV,3,2,09,29,08,040,,31,41,052,32,32,33,245,20,42,51,128,36*7B
+$GPGSV,3,3,09,50,46,122,41*43
+$GPGLL,2233.62330,N,11405.54845,E,013635.00,A,D*63
+$GPRMC,013636.00,A,2233.62331,N,11405.54850,E,0.038,,250811,,,D*78
+$GPVTG,,T,,M,0.038,N,0.070,K,D*2A
+$GPGGA,013636.00,2233.62331,N,11405.54850,E,2,07,2.71,105.5,M,-2.2,M,,0000*49
+$GPGSA,A,3,31,06,50,03,42,23,32,,,,,,11.20,2.71,10.87*0E
+$GPGSV,3,1,09,03,42,186,34,06,53,163,23,13,01,322,,23,24,321,33*7D
+$GPGSV,3,2,09,29,08,040,,31,41,052,33,32,33,245,20,42,51,128,36*7A
+$GPGSV,3,3,09,50,46,122,41*43
+$GPGLL,2233.62331,N,11405.54850,E,013636.00,A,D*65
+$GPRMC,013637.00,A,2233.62331,N,11405.54855,E,0.114,,250811,,,D*73
+$GPVTG,,T,,M,0.114,N,0.211,K,D*20
+$GPGGA,013637.00,2233.62331,N,11405.54855,E,2,07,2.71,105.3,M,-2.2,M,,0000*4B
+$GPGSA,A,3,31,06,50,03,42,23,32,,,,,,11.20,2.71,10.87*0E
+$GPGSV,3,1,09,03,42,186,34,06,53,163,24,13,01,322,,23,24,321,33*7A
+$GPGSV,3,2,09,29,08,040,,31,41,052,33,32,33,245,20,42,51,128,36*7A
+$GPGSV,3,3,09,50,46,122,41*43
+$GPGLL,2233.62331,N,11405.54855,E,013637.00,A,D*61
+--]]
+
